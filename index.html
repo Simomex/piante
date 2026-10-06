@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<!-- Diario delle piante, versione autonoma: va messa online a un indirizzo proprio.
+     Foto e testi si salvano nella memoria del browser del telefono (IndexedDB). -->
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Piante">
+<meta name="theme-color" content="#2F5D3A">
+<title>Il diario delle piante</title>
+<style>
+:root{
+  --bg:#EAF3E4; --paper:#F9FCF5; --sage:#C5D9B8; --tint:#DCEAD1;
+  --moss:#2F5D3A; --ink:#27352B; --muted:#5C7061; --accent:#2F5D3A;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+  --sans:"Avenir Next",Avenir,"Segoe UI","Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{font-size:16px}
+@media screen and (min-width:704px){html{font-size:clamp(11px,1.35vw,15px)}}
+body{margin:0;color:var(--ink);font-family:var(--sans);background:#EAF3E4 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='170' height='170'%3E%3Cg fill='none' stroke='%23C3D8B5' stroke-width='1.2' stroke-linecap='round'%3E%3Cg transform='translate(26 64) rotate(-30)'%3E%3Cpath d='M0 0C12-16 40-16 56 0 40 16 12 16 0 0Z'/%3E%3Cpath d='M4 0H50'/%3E%3C/g%3E%3Cg transform='translate(92 98) rotate(40)'%3E%3Cpath d='M0 0C12-16 40-16 56 0 40 16 12 16 0 0Z'/%3E%3Cpath d='M4 0H50'/%3E%3C/g%3E%3Cg transform='translate(134 18) rotate(110) scale(.7)'%3E%3Cpath d='M0 0C12-16 40-16 56 0 40 16 12 16 0 0Z'/%3E%3Cpath d='M4 0H50'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")}
+
+/* barra dell'app (in px: non segue la scala della pagina) */
+.bar{position:sticky;top:0;z-index:9;background:var(--moss);color:#F1F7EC;font:500 14px/1.35 var(--sans);padding:10px 12px 8px}
+.bar .row{display:flex;align-items:center;gap:8px}
+.bar strong{margin-right:auto;font-family:var(--serif);font-size:18px;font-weight:600}
+.bar button{font:inherit;min-height:38px;border:0;border-radius:999px;padding:8px 14px;cursor:pointer;color:var(--moss);background:#F1F7EC}
+.bar button:disabled{opacity:.5;cursor:default}
+.bar button.ghost{background:transparent;color:#F1F7EC;box-shadow:inset 0 0 0 1px rgba(241,247,236,.6)}
+.bar button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.tabs{display:flex;gap:6px;overflow-x:auto;margin-top:8px;padding-bottom:2px}
+.tabs button{flex:none;background:transparent;color:#F1F7EC;box-shadow:inset 0 0 0 1px rgba(241,247,236,.45)}
+.tabs button[aria-pressed="true"]{background:#F1F7EC;color:var(--moss);box-shadow:none}
+.tabs button.add{box-shadow:none;border:1px dashed rgba(241,247,236,.7)}
+.status{margin:6px 0 0;font-size:13px;min-height:0}
+.status:empty{display:none}
+
+/* scheda: misure pensate per il foglio A4 (1rem ≈ 3 mm in stampa) */
+.sheet{display:none;position:relative;flex-direction:column;gap:1.33rem;max-width:70rem;margin:0 auto;padding:2.4rem 4rem 2.6rem;font-size:1rem;line-height:1.4}
+.sheet.on{display:flex}
+.sheet p{margin:0}
+.head{display:grid;grid-template-columns:18.7rem 1fr;gap:3rem;align-items:center}
+.photo{position:relative;display:block;aspect-ratio:56/68;overflow:hidden;border-radius:9.4rem 9.4rem 1.3rem 1.3rem;background:#D6E6CA;border:.3rem solid var(--paper);box-shadow:0 0 0 1px var(--sage);cursor:pointer}
+.photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.photo .art{position:absolute;left:10%;top:12%;width:80%;height:76%;color:var(--accent)}
+.photo input{position:absolute;opacity:0;width:1px;height:1px}
+.photo:focus-within{box-shadow:0 0 0 3px var(--accent)}
+.tap{position:absolute;left:0;right:0;bottom:0;padding:8px 6px;text-align:center;font:500 13px/1.2 var(--sans);color:#fff;background:rgba(39,53,43,.62)}
+.title{min-width:0}
+.sheet h1{margin:0;font-family:var(--serif);font-weight:600;font-size:5rem;line-height:1;letter-spacing:-.01em;color:var(--moss)}
+.sheet .latin{margin-top:.5rem;font-family:var(--serif);font-size:1.67rem;color:var(--muted)}
+.latin i{color:var(--accent)}
+.sheet .lede{margin-top:1.3rem;max-width:35rem;font-size:1.13rem;line-height:1.45}
+.glance{display:grid;grid-template-columns:repeat(3,1fr);margin:1.6rem 0 0;border-top:1px solid var(--sage)}
+.glance div{padding:.85rem 1rem 0 0}
+.glance div+div{padding-left:1rem;border-left:1px solid var(--sage)}
+.glance dt{font-size:.9rem;color:var(--muted)}
+.glance dd{margin:.15rem 0 0;font-weight:700;font-size:1.2rem;line-height:1.2;color:var(--accent)}
+
+.sheet h2{display:flex;align-items:center;gap:.8rem;margin:0 0 .53rem;font-family:var(--serif);font-weight:600;font-size:1.6rem;line-height:1.1;color:var(--moss)}
+.ic{flex:none;width:2.17rem;height:2.17rem;padding:.43rem;border-radius:50%;background:var(--tint);color:var(--moss)}
+.ic svg{display:block;width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.care{display:grid;grid-template-columns:1fr 1fr;background:rgba(249,252,245,.93);border-radius:1.67rem;box-shadow:0 0 0 1px var(--sage)}
+.care section{padding:1.2rem 1.67rem 1.27rem;min-width:0}
+.care section:nth-child(even){border-left:1px solid var(--sage)}
+.care section:nth-child(n+3){border-top:1px solid var(--sage)}
+.seasons{background:var(--tint);border-radius:1.67rem;padding:1.2rem 1.67rem 1.33rem}
+.seasons .ic{background:var(--paper)}
+.seasons ol{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);gap:1.33rem}
+.seasons li{border-top:.23rem solid var(--accent);padding-top:.5rem;font-size:.97rem;min-width:0}
+.seasons b{display:block;font-family:var(--serif);font-size:1.33rem;font-weight:600;color:var(--moss)}
+.blk{display:block}
+.extra{padding:0 .67rem}
+.extra ul{list-style:none;margin:0;padding:0;columns:2;column-gap:3rem}
+.extra li{position:relative;break-inside:avoid;padding-left:1.53rem;margin-bottom:.47rem}
+.extra li::before{content:"";position:absolute;left:0;top:.4rem;width:.9rem;height:.53rem;border-radius:0 100% 0 100%;background:var(--accent);opacity:.8}
+.foot{margin-top:auto;display:grid;grid-template-columns:1fr auto;gap:1.67rem;border-top:1px solid var(--sage);padding-top:.73rem;font-size:.78rem;line-height:1.45;color:var(--muted)}
+.foot b{color:var(--moss)}
+.foot a{color:var(--moss);overflow-wrap:anywhere}
+.foot .side{text-align:right;align-self:end}
+.foot .n{display:block;font-family:var(--serif);font-size:1.67rem;line-height:1;color:var(--moss)}
+.nophoto .credit{display:none}
+
+/* campi */
+.fld:empty::before{content:attr(data-ph);color:var(--muted);opacity:.75;font-style:normal;font-weight:400}
+[contenteditable]{outline:1px dashed var(--accent);outline-offset:3px;border-radius:3px;background:rgba(255,255,255,.6);cursor:text;min-width:3em}
+[contenteditable]:focus{outline:2px solid var(--accent);background:#fff}
+.latin [contenteditable]{display:inline-block}
+.mini{font:500 14px/1.2 var(--sans);min-height:38px;padding:8px 14px;border-radius:999px;border:1px solid var(--moss);background:var(--paper);color:var(--moss);cursor:pointer}
+.mini:focus-visible,.x:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mini.warn{border-color:#A3352A;color:#A3352A}
+.pcol .mini{display:block;margin:10px auto 0}
+.x{float:right;width:30px;height:30px;margin:0 0 4px 8px;border:1px solid var(--sage);border-radius:50%;background:var(--paper);color:var(--moss);font:600 16px/1 var(--sans);cursor:pointer}
+.extra li .fld,.src .fld{display:block;overflow:hidden}
+.extra .mini{margin-top:6px}
+.src{margin:0 0 10px;font-size:14px}
+.src .fld+.fld{margin-top:6px}
+.danger{display:flex;flex-wrap:wrap;gap:8px;padding-top:4px}
+
+/* copertina: solo nel PDF */
+.cover{overflow:hidden;justify-content:flex-end;padding-bottom:8rem}
+.cover .leaf{position:absolute;top:2rem;right:-6rem;width:47rem;height:54rem;color:var(--moss);transform:rotate(16deg)}
+.cover h1{font-size:7.3rem;line-height:.98;max-width:50rem}
+.sheet.cover .lede{margin-top:2rem;font-size:1.47rem;max-width:40rem}
+.toc{list-style:none;margin:3.3rem 0 0;padding:0;max-width:43rem;font-family:var(--serif);font-size:1.73rem}
+.toc li{display:flex;align-items:baseline;gap:.8rem;padding:.73rem 0;border-top:1px solid var(--sage);color:var(--moss);font-weight:600}
+.toc i{color:var(--muted);font-size:1.33rem;font-weight:400}
+.toc span{margin-left:auto}
+
+/* telefono */
+@media screen and (max-width:703.9px){
+  .sheet{padding:1rem 1rem 2.2rem;gap:1rem}
+  .head{display:block}
+  .pcol{width:min(14rem,66%);margin:0 auto 1.1rem}
+  .photo{aspect-ratio:4/5;border-radius:7rem 7rem 1rem 1rem;border-width:.25rem}
+  .sheet h1{font-size:2.7rem}
+  .sheet .latin{font-size:1.15rem;margin-top:.35rem}
+  .sheet .lede{font-size:1rem;margin-top:.8rem}
+  .glance{grid-template-columns:1fr;margin-top:1rem}
+  .glance div,.glance div+div{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;padding:.55rem 0;border-left:0;border-bottom:1px solid var(--sage)}
+  .glance dt{font-size:.9rem;flex:none}
+  .glance dd{font-size:1rem;margin:0;text-align:right}
+  .sheet h2{font-size:1.3rem;gap:.6rem;margin-bottom:.4rem}
+  .ic{width:1.9rem;height:1.9rem;padding:.38rem}
+  .care{grid-template-columns:1fr;border-radius:1rem}
+  .care section{padding:.9rem 1rem 1rem}
+  .care section:nth-child(even){border-left:0}
+  .care section:nth-child(n+2){border-top:1px solid var(--sage)}
+  .seasons{border-radius:1rem;padding:.9rem 1rem 1rem}
+  .seasons ol{grid-template-columns:1fr 1fr;gap:.9rem}
+  .seasons li{font-size:.95rem;border-top-width:3px}
+  .seasons b{font-size:1.1rem}
+  .extra{padding:0 .25rem}
+  .extra ul{columns:1}
+  .extra li{padding-left:1.4rem;margin-bottom:.55rem}
+  .extra li::before{top:.42rem;width:.85rem;height:.5rem}
+  .foot{grid-template-columns:1fr;gap:.5rem;font-size:.8rem}
+  .foot .side{text-align:left}
+  .foot .n{display:none}
+}
+
+@page{size:A4;margin:0}
+@media print{
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  html{font-size:11px}
+  .bar,.tap,.eo{display:none!important}
+  .sheet,.sheet.on{display:flex;width:210mm;max-width:none;min-height:296mm;margin:0;break-after:page;page-break-after:always}
+  .sheet:last-child{break-after:auto;page-break-after:auto}
+  [contenteditable]{outline:0;background:none}
+}
+</style>
+</head>
+<body>
+
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <mask id="mcut" maskUnits="userSpaceOnUse" x="0" y="0" width="200" height="230">
+      <rect width="200" height="230" fill="#fff"/>
+      <g stroke="#000" stroke-width="8" stroke-linecap="round">
+        <path d="M-6 66 58 82M-6 104 52 112M-2 144 56 140M18 186 66 164"/>
+        <path d="M206 66 142 82M206 104 148 112M202 144 144 140M182 186 134 164"/>
+      </g>
+      <ellipse cx="80" cy="62" rx="5" ry="9" transform="rotate(-20 80 62)"/>
+      <ellipse cx="120" cy="62" rx="5" ry="9" transform="rotate(20 120 62)"/>
+      <ellipse cx="82" cy="124" rx="5" ry="9" transform="rotate(-35 82 124)"/>
+      <ellipse cx="118" cy="124" rx="5" ry="9" transform="rotate(35 118 124)"/>
+    </mask>
+    <symbol id="monstera" viewBox="0 0 200 230">
+      <path mask="url(#mcut)" fill="currentColor" d="M100 214C42 194 6 144 10 88 14 42 56 14 100 34 144 14 186 42 190 88 194 144 158 194 100 214Z"/>
+      <path d="M100 36V8" stroke="currentColor" stroke-width="5" stroke-linecap="round" fill="none"/>
+      <path d="M100 42V198" stroke="#EAF3E4" stroke-opacity=".45" stroke-width="2" stroke-linecap="round" fill="none"/>
+    </symbol>
+    <symbol id="hibiscus" viewBox="0 0 200 200">
+      <g fill="#3F7A4B">
+        <path d="M24 156C36 124 68 112 96 124 84 154 54 168 24 156Z"/>
+        <path d="M176 158C164 126 132 114 104 126 116 156 146 170 176 158Z"/>
+      </g>
+      <g fill="currentColor" stroke="#9E3322" stroke-width="1.5" stroke-linejoin="round">
+        <path d="M100 100C66 84 60 40 100 12 140 40 134 84 100 100Z"/>
+        <path d="M100 100C66 84 60 40 100 12 140 40 134 84 100 100Z" transform="rotate(72 100 100)"/>
+        <path d="M100 100C66 84 60 40 100 12 140 40 134 84 100 100Z" transform="rotate(144 100 100)"/>
+        <path d="M100 100C66 84 60 40 100 12 140 40 134 84 100 100Z" transform="rotate(216 100 100)"/>
+        <path d="M100 100C66 84 60 40 100 12 140 40 134 84 100 100Z" transform="rotate(288 100 100)"/>
+      </g>
+      <circle cx="100" cy="100" r="15" fill="#8C2233"/>
+      <path d="M100 100 132 54" stroke="#F0C050" stroke-width="5" stroke-linecap="round" fill="none"/>
+      <g fill="#F0C050"><circle cx="136" cy="48" r="4"/><circle cx="127" cy="46" r="3"/><circle cx="140" cy="57" r="3"/></g>
+    </symbol>
+    <symbol id="leaf" viewBox="0 0 200 200">
+      <path fill="currentColor" d="M28 172C28 88 82 30 172 28 170 118 112 172 28 172Z"/>
+      <path d="M28 172 132 68" stroke="#EAF3E4" stroke-opacity=".5" stroke-width="3" stroke-linecap="round" fill="none"/>
+    </symbol>
+    <g id="i-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8"/></g>
+    <g id="i-drop"><path d="M12 3C8 8 6 11 6 14a6 6 0 0 0 12 0c0-3-2-6-6-11Z"/></g>
+    <g id="i-temp"><path d="M10 14V5a2 2 0 0 1 4 0v9a4 4 0 1 1-4 0Z"/><path d="M12 10v7"/></g>
+    <g id="i-snow"><path d="M12 3v18M4.2 7.5l15.6 9M19.8 7.5l-15.6 9"/></g>
+    <g id="i-cut"><circle cx="7" cy="17.5" r="2.5"/><circle cx="17" cy="17.5" r="2.5"/><path d="M8.6 15.5 18 4M15.4 15.5 6 4"/></g>
+    <g id="i-feed"><path d="M12 21v-9M12 13c0-4-3-6-7-6 0 4 3 6 7 6ZM12 10c0-3 2.5-5 6-5 0 3-2.5 5-6 5Z"/></g>
+    <g id="i-year"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M8 3v4M16 3v4"/></g>
+    <g id="i-note"><path d="M5 19C5 10 10 5 19 5c0 9-5 14-14 14ZM5 19l8-8"/></g>
+  </defs>
+</svg>
+
+<div class="bar">
+  <div class="row">
+    <strong>Diario delle piante</strong>
+    <button class="ghost" id="pdf" type="button">PDF</button>
+    <button id="edit" type="button" disabled>Modifica</button>
+  </div>
+  <nav class="tabs" id="tabs" aria-label="Piante"></nav>
+  <p class="status" id="status" role="status"></p>
+</div>
+
+<main id="wrap"></main>
+
+<script>
+(function(){
+'use strict';
+var KEY='diario-piante';
+var CARE=['Luce','Acqua','Temperatura e umidità','Freddo e caldo','Potatura','Concime'];
+var ICONS=['sun','drop','temp','snow','cut','feed'];
+var SEAS=['Primavera','Estate','Autunno','Inverno'];
+var GL=['Luce','Acqua','Mai sotto i'];
+var ARTS={hibiscus:1,monstera:1,leaf:1};
+var NOSAVE='Su questo browser non riesco a salvare: le modifiche restano solo finché tieni aperta questa pagina.';
+
+var DEFAULTS=[
+{id:'ibisco',accent:'#C4452F',art:'hibiscus',
+ photo:'https://vithalgarden.com/media/magefan_blog/2014/12/hibiscus-rosa-sinensis-consigli-per-la-coltivazione.jpg',credit:'vithalgarden.com',
+ name:'Ibisco',latin:'Hibiscus rosa-sinensis',aka:'la rosa di Cina',
+ lede:"Arbusto tropicale da vaso, in fiore da maggio a ottobre. Vuole tanta luce, acqua regolare e un concime da fiore; d'inverno va riparato in casa.",
+ glance:['Piena luce','2–3 volte a settimana in estate','10 °C'],
+ care:[
+  "Piena luce: molto luminoso, con 5–6 ore di sole al giorno per fiorire bene. In piena estate un po' d'ombra nelle ore centrali. Al riparo da vento e correnti d'aria.",
+  "Estate: 2–3 volte a settimana, al mattino presto o di sera. Primavera e autunno: 1–2 volte. Inverno: ogni 10–15 giorni. Mai acqua ferma: svuotare il sottovaso dopo mezz'ora.",
+  "Ideale tra 17 e 28 °C. D'inverno preferisce un posto luminoso e fresco, a 12–15 °C. Ama l'aria umida: si possono vaporizzare le foglie con acqua.",
+  "Freddo: non lo regge. Sotto i 10 °C perde le foglie e il gelo può ucciderlo. Caldo: lo ama, se l'acqua non manca; con aria calda e secca attenzione alla cocciniglia.",
+  "A marzo–aprile: via i rami secchi o deboli e i principali accorciati di circa un terzo, sopra una gemma rivolta all'esterno. Non potare in estate o in autunno.",
+  "Sì, specifico (non universale): liquido per piante da fiore, ricco di potassio e fosforo, ogni 15 giorni da aprile a settembre. Va bene anche uno per acidofile. Stop nei mesi freddi."],
+ seasons:["Potare, rinvasare, concime di nuovo da aprile.","Fuori al sole; ombra a mezzogiorno, acqua spesso.","Da ottobre al riparo, prima dei 10 °C.","Rigorosamente dentro: luce, fresco, poca acqua."],
+ extra:[
+  "Spostarlo il meno possibile: quando cambia spesso posto, i boccioli cadono.",
+  "Terriccio drenante per piante fiorite, con perlite o pomice. Rinvaso ogni 1–2 anni, in primavera.",
+  "Foglie gialle o pochi fiori: spesso manca nutrimento. Parassiti tipici: afidi e cocciniglie.",
+  "Se è un ibisco da giardino (Hibiscus syriacus) le regole cambiano: è rustico e passa l'inverno fuori."],
+ sources:[
+  {l:'Rose Barni',u:'https://www.rosebarni.it/ibisco-i-migliori-consigli-per-prendersene-cura'},
+  {l:'Vithal Garden',u:'https://vithalgarden.com/it/blog/post/hibiscus-rosa-sinensis-consigli-per-la-coltivazione'},
+  {l:'Giardinaggio.it',u:'https://www.giardinaggio.it/giardino/piante-da-giardino/hibiscus-rosa-sinensis.asp'},
+  {l:'Sassi Garden, le varietà di ibisco',u:'https://sassigarden.com/IBISCO-c200538862'}]},
+{id:'monstera',accent:'#1E7A4C',art:'monstera',
+ photo:'https://d2j6dbq0eux0bg.cloudfront.net/images/27643051/products/196362699/3683137811.jpg',credit:'sassigarden.com',
+ name:'Monstera',latin:'Monstera deliciosa',aka:'la pianta groviera',
+ lede:"Rampicante tropicale da interno, con grandi foglie lucide e forate. Chiede luce filtrata, acqua solo a terra asciutta e aria umida.",
+ glance:['Indiretta','Solo a terra asciutta','10 °C'],
+ care:[
+  "Luce indiretta, in una posizione ben luminosa ma al riparo dal sole diretto, che le brucia le foglie.",
+  "Solo quando il terriccio è asciutto al tatto. Teme il ristagno: vaso che dreni bene e niente acqua ferma nel sottovaso. In inverno si bagna meno.",
+  "Ideale tra 18 e 30 °C. Vuole umidità alta: se l'aria è secca, argilla espansa umida nel sottovaso e foglie nebulizzate spesso.",
+  "Freddo: tollera fino a 10 °C, non meno; d'inverno resta in casa. Caldo: sta bene fino a 30 °C, purché lontana dal sole diretto e con aria non secca.",
+  "Non serve una vera potatura: basta togliere le foglie vecchie o rovinate. I fusti si accorciano solo per contenere la crescita.",
+  "Sì, da aprile a settembre, ogni 20–25 giorni. Basta un liquido per piante verdi d'appartamento, o un universale: non serve uno specifico. In inverno niente."],
+ seasons:["Concime di nuovo da aprile; rinvaso ogni 2–3 anni.","Può stare fuori in mezz'ombra con notti sopra i 15 °C.","In casa prima dei 10 °C. Ultimo concime a settembre.","Rigorosamente dentro: meno acqua, niente concime."],
+ extra:[
+  "Crescendo le serve un tutore, come un bastone muschiato su cui arrampicarsi.",
+  "Tossica se ingerita e irritante per la pelle: fuori dalla portata di bambini e animali.",
+  "Macchie marroni sulle foglie più vecchie: è invecchiamento naturale, niente allarme.",
+  "Parassiti tipici: afidi e cocciniglie. Terriccio sempre ben drenante."],
+ sources:[
+  {l:'Sassi Garden, scheda Monstera deliciosa',u:'https://sassigarden.com/Monstera-deliciosa-Philodendron-Pertusum-vaso-O-17-cm-h-70-cm-p196362699'},
+  {l:"Sassi Garden, scheda Monstera 'Medium Silver' (temperature ideali, estate all'aperto, inverno)",u:'https://sassigarden.com/Monstera-deliciosa-Medium-Silver-vaso-O6-cm-p622780422'}]},
+{id:'monkey-mask',accent:'#2B7A6B',art:'monstera',
+ photo:'https://d2j6dbq0eux0bg.cloudfront.net/images/27643051/products/381057784/3329766754.jpg',credit:'sassigarden.com',
+ name:'Monkey Mask',latin:'Monstera adansonii',aka:"varietà 'Monkey Mask'",
+ lede:"Monstera dalle foglie piccole e traforate, da far arrampicare o da tenere appesa. Vuole luce indiretta brillante, acqua solo a terra asciutta e aria umida.",
+ glance:['Indiretta brillante','Solo a terra asciutta','10 °C'],
+ care:[
+  "Luce indiretta brillante; tollera anche la luce filtrata. Il sole diretto rovina le foglie: posizione luminosa ma al riparo dai raggi.",
+  "Quando il substrato è asciutto al tatto, senza ristagni: il vaso deve avere i fori di drenaggio. Dopo un rinvaso, acqua con moderazione.",
+  "Ideale tra 20 e 30 °C. Ama l'umidità elevata: sottovaso con argilla espansa umida, oppure un umidificatore se l'aria è secca.",
+  "Freddo: minimo tollerato 10 °C; d'inverno meglio in casa. Caldo: sta bene fino a 30 °C, lontana dal sole diretto e con aria umida.",
+  "Nessuna vera potatura: si tolgono le foglie ingiallite o rovinate, per tenerla pulita e sana.",
+  "Sì, dalla primavera all'autunno; mai in inverno. Sulla frequenza Sassi dà due indicazioni: ogni 20–25 giorni oppure ogni due mesi. Basta un liquido per piante verdi o un universale."],
+ seasons:["Riprende il concime; rinvaso ogni 2–3 anni.","Può stare fuori in mezz'ombra con notti sopra i 15 °C.","In casa prima dei 10 °C. Ultimi concimi.","Rigorosamente dentro: niente concime."],
+ extra:[
+  "Si può far arrampicare su un tutore oppure lasciar ricadere da un vaso appeso.",
+  "Tossica per cani e gatti se ingerita: può irritare la bocca.",
+  "Parassiti tipici: afidi e cocciniglie; si trattano con sapone insetticida biologico.",
+  "Terriccio ben drenante. In casa fiorisce di rado."],
+ sources:[
+  {l:'Sassi Garden, scheda Monstera adansonii Monkey Mask',u:'https://sassigarden.com/Monstera-Adansonii-Monkey-Mask-vaso-O12-cm-p381057784'}]}
+];
+
+var plants=clone(DEFAULTS), photos={}, failed={}, cur=0, editing=false, ready=false, timer=null;
+var wrap=document.getElementById('wrap'), tabs=document.getElementById('tabs'),
+    statusEl=document.getElementById('status'), editBtn=document.getElementById('edit');
+
+function clone(o){return JSON.parse(JSON.stringify(o));}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function status(t){statusEl.textContent=t||'';}
+function blank(){return {id:'p'+Date.now().toString(36),accent:'#2F5D3A',art:'leaf',photo:'',credit:'',name:'Nuova pianta',latin:'',aka:'',lede:'',glance:['','',''],care:['','','','','',''],seasons:['','','',''],extra:[''],sources:[]};}
+function norm(p){
+  var b=blank(), k;
+  if(!p||typeof p!=='object') return b;
+  for(k in b) if(p[k]==null) p[k]=b[k];
+  ['glance','care','seasons'].forEach(function(k){
+    if(!Array.isArray(p[k])) p[k]=b[k];
+    while(p[k].length<b[k].length) p[k].push('');
+  });
+  if(!Array.isArray(p.extra)) p.extra=[];
+  if(!Array.isArray(p.sources)) p.sources=[];
+  p.id=String(p.id).replace(/[^A-Za-z0-9_-]/g,'')||b.id;
+  return p;
+}
+
+/* salvataggio nella memoria del browser (IndexedDB): resta su questo telefono */
+var dbp=new Promise(function(res){
+  try{
+    var rq=indexedDB.open('diario-piante',1);
+    rq.onupgradeneeded=function(){rq.result.createObjectStore('kv');};
+    rq.onsuccess=function(){res(rq.result);};
+    rq.onerror=function(){res(null);};
+    rq.onblocked=function(){res(null);};
+  }catch(e){res(null);}
+});
+function sget(k){
+  return dbp.then(function(d){
+    if(!d) return null;
+    return new Promise(function(res){
+      try{
+        var r=d.transaction('kv','readonly').objectStore('kv').get(k);
+        r.onsuccess=function(){res(r.result==null?null:r.result);};
+        r.onerror=function(){res(null);};
+      }catch(e){res(null);}
+    });
+  });
+}
+function sset(k,v){
+  return dbp.then(function(d){
+    if(!d) return false;
+    return new Promise(function(res){
+      try{
+        var t=d.transaction('kv','readwrite');
+        t.objectStore('kv').put(v,k);
+        t.oncomplete=function(){res(true);};
+        t.onerror=t.onabort=function(){res(false);};
+      }catch(e){res(false);}
+    });
+  });
+}
+function sdel(k){
+  dbp.then(function(d){
+    if(!d) return;
+    try{d.transaction('kv','readwrite').objectStore('kv').delete(k);}catch(e){}
+  });
+}
+function save(){
+  clearTimeout(timer);
+  status('Salvo…');
+  timer=setTimeout(function(){
+    sset(KEY,JSON.stringify({v:2,plants:plants,seen:DEFAULTS.map(function(x){return x.id;})})).then(function(ok){status(ok?'Salvato':NOSAVE);});
+  },500);
+}
+
+/* disegno delle schede */
+function fld(tag,path,val,ph,cls){
+  return '<'+tag+' class="fld'+(cls?' '+cls:'')+'" data-ph="'+esc(editing?ph:'Da compilare')+'"'+
+    (editing?' contenteditable="true" data-f="'+path+'"':'')+'>'+esc(val)+'</'+tag+'>';
+}
+function ic(n){return '<span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-'+n+'"/></svg></span>';}
+function okUrl(u){return /^https?:\/\//i.test(u||'');}
+
+function sheet(p,i){
+  var own=photos[p.id], src=own||(failed[p.photo]?'':p.photo);
+  var accent=/^#[0-9a-f]{3,8}$/i.test(p.accent)?p.accent:'#2F5D3A';
+  var art=ARTS[p.art]?p.art:'leaf';
+  var h='<article class="sheet'+(i===cur?' on':'')+'" data-i="'+i+'" style="--accent:'+accent+'">';
+
+  h+='<header class="head"><div class="pcol"><label class="photo">'+
+     '<svg class="art" aria-hidden="true"><use href="#'+art+'" width="100%" height="100%"/></svg>'+
+     (src?'<img src="'+esc(src)+'" alt="Foto di '+esc(p.name)+'" referrerpolicy="no-referrer">':'')+
+     '<input type="file" accept="image/*" aria-label="Scegli una foto per '+esc(p.name)+'">'+
+     '<span class="tap">'+(own?'Cambia foto':'Carica una foto')+'</span></label>'+
+     (editing&&own?'<button type="button" class="mini eo" data-act="nophoto">Togli la mia foto</button>':'')+
+     '</div><div class="title">'+fld('h1','name',p.name,'Nome della pianta');
+  if(editing) h+='<p class="latin">'+fld('i','latin',p.latin,'Nome botanico')+' '+fld('span','aka',p.aka,'soprannome')+'</p>';
+  else if(p.latin||p.aka) h+='<p class="latin">'+(p.latin?'<i>'+esc(p.latin)+'</i>':'')+(p.latin&&p.aka?', ':'')+esc(p.aka)+'</p>';
+  h+=fld('p','lede',p.lede,'Due righe su questa pianta','lede');
+  h+='<dl class="glance">'+GL.map(function(g,k){return '<div><dt>'+g+'</dt>'+fld('dd','glance.'+k,p.glance[k],'In breve')+'</div>';}).join('')+'</dl></div></header>';
+
+  h+='<div class="care">'+CARE.map(function(t,k){
+    return '<section><h2>'+ic(ICONS[k])+t+'</h2>'+fld('p','care.'+k,p.care[k],'Scrivi qui')+'</section>';
+  }).join('')+'</div>';
+
+  h+='<section class="seasons"><h2>'+ic('year')+"Durante l'anno</h2><ol>"+SEAS.map(function(t,k){
+    return '<li><b>'+t+'</b>'+fld('span','seasons.'+k,p.seasons[k],'Cosa fare','blk')+'</li>';
+  }).join('')+'</ol></section>';
+
+  h+='<section class="extra"><h2>'+ic('note')+'Altre cose utili</h2><ul>'+p.extra.map(function(t,k){
+    return '<li>'+(editing?'<button type="button" class="x eo" data-act="del-extra" data-k="'+k+'" aria-label="Elimina questa nota">×</button>':'')+
+      fld('span','extra.'+k,t,'Scrivi una nota')+'</li>';
+  }).join('')+'</ul>'+(editing?'<button type="button" class="mini eo" data-act="add-extra">+ Aggiungi una nota</button>':'')+'</section>';
+
+  h+='<footer class="foot"><div><b>Fonti</b>';
+  if(editing){
+    h+='<div style="margin-top:8px">'+p.sources.map(function(s,k){
+      return '<div class="src"><button type="button" class="x eo" data-act="del-src" data-k="'+k+'" aria-label="Elimina questa fonte">×</button>'+
+        fld('span','sources.'+k+'.l',s.l,'Nome del sito')+fld('span','sources.'+k+'.u',s.u,'https://…')+'</div>';
+    }).join('')+'<button type="button" class="mini eo" data-act="add-src">+ Aggiungi una fonte</button></div>';
+  }else{
+    h+=p.sources.map(function(s){
+      return '<br>'+esc(s.l)+(s.l&&s.u?': ':'')+(okUrl(s.u)?'<a href="'+esc(s.u)+'" target="_blank" rel="noopener">'+esc(s.u)+'</a>':esc(s.u));
+    }).join('');
+    if(!p.sources.length) h+='<br>Nessuna fonte indicata.';
+  }
+  h+='</div><div class="side">'+(!own&&p.credit&&src?'<span class="credit">Foto: '+esc(p.credit)+'</span>':'')+'<span class="n">'+(i+2)+'</span></div></footer>';
+
+  if(editing){
+    var isDef=DEFAULTS.some(function(d){return d.id===p.id;});
+    h+='<div class="danger eo">'+
+      (isDef?'<button type="button" class="mini" data-act="reset" data-label="Ripristina i testi originali">Ripristina i testi originali</button>':'')+
+      (plants.length>1?'<button type="button" class="mini warn" data-act="delete" data-label="Elimina questa pianta">Elimina questa pianta</button>':'')+
+      '</div>';
+  }
+  if(editing) h+='<div class="danger eo"><button type="button" class="mini" data-act="backup">Salva una copia di sicurezza</button>'+
+    '<label class="mini" style="position:relative;display:inline-flex;align-items:center">Ripristina da una copia<input type="file" data-backup accept=".txt,.json,text/plain,application/json" style="position:absolute;opacity:0;width:1px;height:1px"></label></div>';
+  return h+'</article>';
+}
+
+function cover(){
+  return '<article class="sheet cover"><svg class="leaf" aria-hidden="true"><use href="#monstera" width="100%" height="100%"/></svg>'+
+    '<h1>Il diario delle piante</h1><p class="lede">Luce, acqua, stagioni e piccoli promemoria: una pagina per ogni pianta di casa e di terrazzo.</p>'+
+    '<ol class="toc">'+plants.map(function(p,i){
+      return '<li>'+esc(p.name)+' <i>'+esc(p.latin)+'</i> <span>'+(i+2)+'</span></li>';
+    }).join('')+'</ol></article>';
+}
+
+function renderTabs(){
+  tabs.innerHTML=plants.map(function(p,i){
+    return '<button type="button" data-tab="'+i+'" aria-pressed="'+(i===cur)+'">'+esc(p.name||'Senza nome')+'</button>';
+  }).join('')+'<button type="button" class="add" data-act="add">+ Aggiungi pianta</button>';
+}
+function render(){
+  if(cur>=plants.length) cur=plants.length-1;
+  if(cur<0) cur=0;
+  renderTabs();
+  wrap.innerHTML=cover()+plants.map(sheet).join('');
+}
+
+/* modifica dei testi */
+function setPath(o,path,val){
+  var ks=path.split('.'), i;
+  for(i=0;i<ks.length-1;i++){ o=o[ks[i]]; if(o==null) return; }
+  o[ks[ks.length-1]]=val;
+}
+wrap.addEventListener('input',function(e){
+  var el=e.target.closest?e.target.closest('[data-f]'):null;
+  if(!el) return;
+  var sh=el.closest('.sheet'), i=+sh.dataset.i, p=plants[i];
+  if(!p) return;
+  var v=el.innerText.replace(/\s+/g,' ').trim();
+  if(!v&&el.innerHTML) el.innerHTML='';
+  setPath(p,el.dataset.f,v);
+  if(el.dataset.f==='name'){
+    var tb=tabs.querySelector('[data-tab="'+i+'"]');
+    if(tb) tb.textContent=v||'Senza nome';
+  }
+  save();
+});
+wrap.addEventListener('keydown',function(e){
+  if(e.key==='Enter'&&e.target.closest&&e.target.closest('[data-f]')){e.preventDefault();e.target.blur();}
+});
+wrap.addEventListener('paste',function(e){
+  if(!(e.target.closest&&e.target.closest('[data-f]'))) return;
+  e.preventDefault();
+  var t=((e.clipboardData||window.clipboardData).getData('text')||'').replace(/\s+/g,' ');
+  document.execCommand('insertText',false,t);
+});
+
+/* foto */
+function shrink(file,cb){
+  var url=URL.createObjectURL(file), im=new Image();
+  im.onload=function(){
+    var s=Math.min(1,1000/Math.max(im.width,im.height));
+    var c=document.createElement('canvas');
+    c.width=Math.max(1,Math.round(im.width*s)); c.height=Math.max(1,Math.round(im.height*s));
+    var out=null;
+    try{c.getContext('2d').drawImage(im,0,0,c.width,c.height); out=c.toDataURL('image/jpeg',.82);}catch(e){}
+    URL.revokeObjectURL(url); cb(out);
+  };
+  im.onerror=function(){URL.revokeObjectURL(url); cb(null);};
+  im.src=url;
+}
+wrap.addEventListener('change',function(e){
+  var inp=e.target;
+  if(inp.type!=='file') return;
+  if(inp.dataset.backup!=null){ if(inp.files&&inp.files[0]) importBackup(inp.files[0]); return; }
+  var f=inp.files&&inp.files[0];
+  if(!f) return;
+  var sh=inp.closest('.sheet'), p=plants[+sh.dataset.i];
+  if(!p) return;
+  sh.querySelector('.tap').textContent='Carico la foto…';
+  shrink(f,function(data){
+    if(!data){status('Non riesco a leggere questa foto. Prova con un JPG o un PNG.'); render(); return;}
+    photos[p.id]=data; render();
+    status('Salvo la foto…');
+    sset('foto-'+p.id,data).then(function(ok){status(ok?'Foto salvata':NOSAVE);});
+  });
+});
+wrap.addEventListener('error',function(e){
+  var t=e.target;
+  if(t&&t.tagName==='IMG'){
+    failed[t.getAttribute('src')]=true; t.hidden=true;
+    var sh=t.closest('.sheet'); if(sh) sh.classList.add('nophoto');
+  }
+},true);
+
+/* pulsanti */
+function armed(btn,label){
+  if(btn.dataset.armed) return true;
+  btn.dataset.armed='1'; btn.textContent=label;
+  setTimeout(function(){ if(btn.isConnected){delete btn.dataset.armed; btn.textContent=btn.dataset.label;} },4000);
+  return false;
+}
+wrap.addEventListener('click',function(e){
+  var b=e.target.closest?e.target.closest('[data-act]'):null;
+  if(!b) return;
+  var sh=b.closest('.sheet'), i=+sh.dataset.i, p=plants[i], k=+b.dataset.k, a=b.dataset.act;
+  if(!p) return;
+  if(a==='backup'){ exportBackup(); return; }
+  if(a==='add-extra') p.extra.push('');
+  else if(a==='del-extra') p.extra.splice(k,1);
+  else if(a==='add-src') p.sources.push({l:'',u:''});
+  else if(a==='del-src') p.sources.splice(k,1);
+  else if(a==='nophoto'){ delete photos[p.id]; sdel('foto-'+p.id); render(); status('Foto tolta'); return; }
+  else if(a==='reset'){
+    if(!armed(b,'Tocca di nuovo per ripristinare')) return;
+    var d=DEFAULTS.filter(function(x){return x.id===p.id;})[0];
+    if(d) plants[i]=clone(d);
+  }
+  else if(a==='delete'){
+    if(!armed(b,'Tocca di nuovo per eliminare')) return;
+    delete photos[p.id]; sdel('foto-'+p.id);
+    plants.splice(i,1); cur=Math.max(0,i-1);
+  }
+  else return;
+  save(); render();
+  if(a==='add-extra'||a==='add-src'){
+    var sel=a==='add-extra'?'.sheet.on .extra li:last-child [data-f]':'.sheet.on .src:last-of-type [data-f]';
+    var el=wrap.querySelector(sel); if(el) el.focus();
+  }
+});
+tabs.addEventListener('click',function(e){
+  var b=e.target.closest?e.target.closest('button'):null;
+  if(!b) return;
+  if(b.dataset.act==='add'){
+    if(!ready) return;
+    plants.push(blank()); cur=plants.length-1; setEditing(true); save();
+    window.scrollTo(0,0);
+    b=tabs.querySelector('[data-tab="'+cur+'"]'); if(b&&b.scrollIntoView) b.scrollIntoView({inline:'center',block:'nearest'});
+    return;
+  }
+  if(b.dataset.tab!=null){ cur=+b.dataset.tab; render(); window.scrollTo(0,0); }
+});
+function setEditing(on){
+  editing=on;
+  editBtn.textContent=on?'Fine':'Modifica';
+  render();
+  status(on?'Tocca un testo per cambiarlo. Si salva da solo.':'');
+}
+editBtn.addEventListener('click',function(){ if(ready) setEditing(!editing); });
+document.getElementById('pdf').addEventListener('click',function(){
+  if(editing) setEditing(false);
+  status('Nella finestra di stampa scegli «Salva come PDF», formato A4, con la grafica di sfondo attiva. Se non si apre, apri il diario in Safari o Chrome e riprova.');
+  try{window.print();}catch(e){}
+});
+
+/* copia di sicurezza: un file con testi e foto, da conservare fuori dall'app */
+function exportBackup(){
+  var name='diario-piante-copia.txt', txt=JSON.stringify({app:'diario-piante',v:2,plants:plants,photos:photos,seen:DEFAULTS.map(function(x){return x.id;})});
+  function done(){status('Copia creata: conservala in File o inviala a te stessa.');}
+  try{
+    var f=new File([txt],name,{type:'text/plain'});
+    if(navigator.canShare&&navigator.canShare({files:[f]})){navigator.share({files:[f],title:'Diario delle piante'}).then(done,function(){status('');}); return;}
+  }catch(e){}
+  var a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([txt],{type:'text/plain'})); a.download=name;
+  document.body.appendChild(a); a.click(); a.remove(); done();
+}
+function importBackup(file){
+  var r=new FileReader();
+  r.onerror=function(){status('Non riesco a leggere il file.');};
+  r.onload=function(){
+    try{
+      var d=JSON.parse(r.result), seen=Array.isArray(d.seen)?d.seen:[];
+      if(d.app!=='diario-piante'||!Array.isArray(d.plants)||!d.plants.length) throw 0;
+      plants.forEach(function(p){sdel('foto-'+p.id);});
+      plants=d.plants.map(norm); photos={}; cur=0;
+      DEFAULTS.forEach(function(x){ if(seen.indexOf(x.id)<0&&!plants.some(function(p){return p.id===x.id;})) plants.push(clone(x)); });
+      plants.forEach(function(p){ var v=d.photos&&d.photos[p.id]; if(typeof v==='string'&&v.indexOf('data:image/')===0){photos[p.id]=v; sset('foto-'+p.id,v);} });
+      save(); render();
+    }catch(e){status('Questo file non è una copia di sicurezza del diario.');}
+  };
+  r.readAsText(file);
+}
+
+/* icona per la schermata Home, disegnata al volo */
+try{
+  var cv=document.createElement('canvas'); cv.width=cv.height=180;
+  var g=cv.getContext('2d');
+  g.fillStyle='#2F5D3A'; g.fillRect(0,0,180,180);
+  g.scale(.9,.9);
+  g.fillStyle='#EAF3E4'; g.fill(new Path2D('M28 172C28 88 82 30 172 28 170 118 112 172 28 172Z'));
+  g.strokeStyle='#2F5D3A'; g.lineWidth=5; g.lineCap='round'; g.stroke(new Path2D('M42 158 132 68'));
+  var ln=document.createElement('link'); ln.rel='apple-touch-icon'; ln.href=cv.toDataURL('image/png');
+  document.head.appendChild(ln);
+}catch(e){}
+
+/* avvio */
+render();
+status('Carico il tuo diario…');
+try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(); }catch(e){}
+sget(KEY).then(function(raw){
+  if(raw){
+    try{
+      var d=JSON.parse(raw);
+      if(d&&Array.isArray(d.plants)&&d.plants.length){
+        plants=d.plants.map(norm);
+        /* le piante nuove aggiunte all'app si sommano a quelle già salvate */
+        var seen=Array.isArray(d.seen)?d.seen:['ibisco','monstera'], added=false;
+        DEFAULTS.forEach(function(x){
+          if(seen.indexOf(x.id)<0&&!plants.some(function(p){return p.id===x.id;})){plants.push(clone(x)); added=true;}
+        });
+        if(added) save();
+      }
+    }catch(e){}
+  }
+  ready=true; editBtn.disabled=false;
+  render();
+  dbp.then(function(db){ if(!db) status(NOSAVE); else if(statusEl.textContent==='Carico il tuo diario…') status(''); });
+  plants.forEach(function(p){
+    sget('foto-'+p.id).then(function(v){
+      if(v&&!photos[p.id]&&!editing){photos[p.id]=v; render();}
+      else if(v&&!photos[p.id]){photos[p.id]=v;}
+    });
+  });
+});
+})();
+</script>
+</body>
+</html>
