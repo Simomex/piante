@@ -31,10 +31,21 @@ body{margin:0;color:var(--ink);font-family:var(--sans);background:#EAF3E4 url("d
 .bar button:disabled{opacity:.5;cursor:default}
 .bar button.ghost{background:transparent;color:#F1F7EC;box-shadow:inset 0 0 0 1px rgba(241,247,236,.6)}
 .bar button:focus-visible{outline:2px solid #fff;outline-offset:2px}
-.tabs{display:flex;gap:6px;overflow-x:auto;margin-top:8px;padding-bottom:2px}
-.tabs button{flex:none;background:transparent;color:#F1F7EC;box-shadow:inset 0 0 0 1px rgba(241,247,236,.45)}
+.tabs{margin-top:8px}
+.tabs button{background:transparent;color:#F1F7EC;box-shadow:inset 0 0 0 1px rgba(241,247,236,.45)}
 .tabs button[aria-pressed="true"]{background:#F1F7EC;color:var(--moss);box-shadow:none}
 .tabs button.add{box-shadow:none;border:1px dashed rgba(241,247,236,.7)}
+/* scelta della pianta: chiusa è una riga sola, aperta mostra tutti i nomi */
+.tabs .pick{display:flex;align-items:center;gap:8px;width:100%;min-height:44px;text-align:left}
+.pick .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.pick .ct{flex:none;font-size:13px;opacity:.85}
+.pick svg{flex:none;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.pick[aria-expanded="true"] svg{transform:rotate(180deg)}
+.list{display:flex;flex-wrap:wrap;gap:6px;margin:4px -4px 0;padding:4px;max-height:50vh;overflow-y:auto}
+.list button{flex:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.list button.ph{opacity:.4;background:transparent;color:#F1F7EC;box-shadow:none;outline:1px dashed rgba(241,247,236,.9);outline-offset:-1px}
+.tabs .lift{position:fixed;left:0;top:0;z-index:20;margin:0;pointer-events:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#F1F7EC;color:var(--moss);box-shadow:0 8px 20px rgba(0,0,0,.35)}
+.hint{margin:6px 2px 0;font-size:13px;opacity:.85}
 .status{margin:6px 0 0;font-size:13px;min-height:0}
 .status:empty{display:none}
 
@@ -358,6 +369,7 @@ var DEFAULTS=[
 ];
 
 var plants=clone(DEFAULTS), photos={}, failed={}, cur=0, editing=false, ready=false, timer=null;
+var open=false, drag=null, skipClick=false;
 var wrap=document.getElementById('wrap'), tabs=document.getElementById('tabs'),
     statusEl=document.getElementById('status'), editBtn=document.getElementById('edit');
 
@@ -502,9 +514,18 @@ function cover(){
 }
 
 function renderTabs(){
-  tabs.innerHTML=plants.map(function(p,i){
-    return '<button type="button" data-tab="'+i+'" aria-pressed="'+(i===cur)+'">'+esc(p.name||'Senza nome')+'</button>';
-  }).join('')+'<button type="button" class="add" data-act="add">+ Aggiungi pianta</button>';
+  if(drag) dragStop(false);
+  var c=plants[cur]||{};
+  var h='<button type="button" class="pick" data-act="toggle" aria-expanded="'+open+'" aria-controls="plist">'+
+    '<span class="nm">'+esc(c.name||'Senza nome')+'</span><span class="ct">'+(cur+1)+' di '+plants.length+'</span>'+
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>';
+  if(open){
+    h+='<div class="list" id="plist">'+plants.map(function(p,i){
+      return '<button type="button" data-tab="'+i+'" aria-pressed="'+(i===cur)+'">'+esc(p.name||'Senza nome')+'</button>';
+    }).join('')+'<button type="button" class="add" data-act="add">+ Aggiungi pianta</button></div>'+
+    (plants.length>1?'<p class="hint">Tieni premuto su un nome per spostarlo.</p>':'');
+  }
+  tabs.innerHTML=h;
 }
 function render(){
   if(cur>=plants.length) cur=plants.length-1;
@@ -530,6 +551,7 @@ wrap.addEventListener('input',function(e){
   if(el.dataset.f==='name'){
     var tb=tabs.querySelector('[data-tab="'+i+'"]');
     if(tb) tb.textContent=v||'Senza nome';
+    if(i===cur){ tb=tabs.querySelector('.pick .nm'); if(tb) tb.textContent=v||'Senza nome'; }
   }
   save();
 });
@@ -619,15 +641,97 @@ wrap.addEventListener('click',function(e){
 tabs.addEventListener('click',function(e){
   var b=e.target.closest?e.target.closest('button'):null;
   if(!b) return;
+  if(skipClick){ skipClick=false; return; }
+  if(b.dataset.act==='toggle'){ open=!open; renderTabs(); return; }
   if(b.dataset.act==='add'){
     if(!ready) return;
+    open=false;
     plants.push(blank()); cur=plants.length-1; setEditing(true); save();
     window.scrollTo(0,0);
-    b=tabs.querySelector('[data-tab="'+cur+'"]'); if(b&&b.scrollIntoView) b.scrollIntoView({inline:'center',block:'nearest'});
     return;
   }
-  if(b.dataset.tab!=null){ cur=+b.dataset.tab; render(); window.scrollTo(0,0); }
+  if(b.dataset.tab!=null){ cur=+b.dataset.tab; open=false; render(); window.scrollTo(0,0); }
 });
+/* un tocco fuori dalla barra richiude l'elenco */
+document.addEventListener('click',function(e){
+  if(open&&!drag&&!(e.target.closest&&e.target.closest('.bar'))){ open=false; renderTabs(); }
+},true);
+
+/* riordino: si tiene premuto un nome e lo si trascina; cambia solo l'ordine delle piante salvate */
+function dragArm(b,x,y,touch){
+  dragStop(false);
+  if(!ready||!open||plants.length<2) return;
+  drag={b:b,x:x,y:y,on:false,touch:touch,last:null,g:null,t:setTimeout(dragBegin,450)};
+}
+function dragBegin(){
+  var d=drag; if(!d) return;
+  var r=d.b.getBoundingClientRect();
+  d.on=true; d.dx=d.x-r.left; d.dy=d.y-r.top;
+  d.g=d.b.cloneNode(true);
+  d.g.className='lift'; d.g.removeAttribute('data-tab'); d.g.removeAttribute('aria-pressed'); d.g.setAttribute('aria-hidden','true');
+  d.g.style.width=r.width+'px';
+  tabs.appendChild(d.g);
+  d.b.classList.add('ph');
+  dragPlace(d.x,d.y);
+  status('Trascina il nome dove vuoi, poi rilascia.');
+}
+function dragPlace(x,y){ drag.g.style.transform='translate('+(x-drag.dx)+'px,'+(y-drag.dy)+'px) scale(1.06)'; }
+function dragMove(x,y){
+  var d=drag; if(!d) return;
+  if(!d.on){ if(Math.abs(x-d.x)>10||Math.abs(y-d.y)>10) dragStop(false); return; }
+  dragPlace(x,y);
+  var L=d.b.parentNode, lr=L.getBoundingClientRect();
+  if(y>lr.bottom-24) L.scrollTop+=10; else if(y<lr.top+24) L.scrollTop-=10;
+  var el=document.elementFromPoint(x,y), t=el&&el.closest?el.closest('.list [data-tab]'):null;
+  if(!t) return;
+  if(t===d.b){ d.last=null; return; }
+  if(t===d.last) return;
+  d.last=t;
+  var after=d.b.compareDocumentPosition(t)&4; /* 4: il nome sotto il dito viene dopo */
+  L.insertBefore(d.b,after?t.nextSibling:t);
+}
+function dragStop(commit){
+  var d=drag; if(!d) return;
+  clearTimeout(d.t); drag=null;
+  if(!d.on) return;
+  if(d.g&&d.g.parentNode) d.g.parentNode.removeChild(d.g);
+  d.b.classList.remove('ph');
+  skipClick=true; setTimeout(function(){skipClick=false;},400);
+  var order=[].map.call(tabs.querySelectorAll('.list [data-tab]'),function(b){return +b.dataset.tab;});
+  var moved=order.length===plants.length&&order.some(function(v,i){return v!==i;});
+  if(commit&&moved){
+    var c=plants[cur];
+    plants=order.map(function(i){return plants[i];});
+    cur=Math.max(0,plants.indexOf(c));
+    save(); render();
+  }else{ status(''); renderTabs(); }
+}
+tabs.addEventListener('touchstart',function(e){
+  var b=e.target.closest?e.target.closest('.list [data-tab]'):null;
+  if(!b||e.touches.length!==1){ dragStop(false); return; }
+  dragArm(b,e.touches[0].clientX,e.touches[0].clientY,true);
+},{passive:true});
+tabs.addEventListener('touchmove',function(e){
+  if(!drag||!drag.touch) return;
+  dragMove(e.touches[0].clientX,e.touches[0].clientY);
+  if(drag&&e.cancelable) e.preventDefault(); /* finché si tiene premuto o si trascina, la pagina non scorre */
+},{passive:false});
+tabs.addEventListener('touchend',function(e){
+  if(!drag||!drag.touch) return;
+  if(drag.on){ if(e.cancelable) e.preventDefault(); dragStop(true); } else dragStop(false);
+});
+tabs.addEventListener('touchcancel',function(){ if(drag&&drag.touch) dragStop(false); });
+tabs.addEventListener('mousedown',function(e){
+  var b=e.button===0&&e.target.closest?e.target.closest('.list [data-tab]'):null;
+  if(b&&!(drag&&drag.touch)) dragArm(b,e.clientX,e.clientY,false);
+});
+document.addEventListener('mousemove',function(e){
+  if(!drag||drag.touch) return;
+  dragMove(e.clientX,e.clientY);
+  if(drag&&drag.on) e.preventDefault();
+});
+document.addEventListener('mouseup',function(){ if(drag&&!drag.touch) dragStop(true); });
+tabs.addEventListener('contextmenu',function(e){ if(e.target.closest&&e.target.closest('.list')) e.preventDefault(); });
 function setEditing(on){
   editing=on;
   editBtn.textContent=on?'Fine':'Modifica';
